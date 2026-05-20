@@ -33,8 +33,6 @@ SOFTWARE.
 #include "config.h"
 #include "hdd.h"
 #include "gen.h"
-#include "slip.h"
-
 #include "sp.h"
 
 #define PRODOS_CMD_STATUS   0x00
@@ -100,6 +98,7 @@ static uint8_t adjust_boot(uint8_t drive) {
     if (drive <= sp_boot) {
         return drive - 1;
     }
+    return drive;
 }
 
 static uint8_t unit_to_drive(uint8_t unit) {
@@ -123,9 +122,6 @@ void __time_critical_func(sp_reset)(void) {
     sp_control = CONTROL_NONE;
     sp_read_offset = sp_write_offset = 0;
     sp_buffer[0] = sp_buffer[1] = 0;
-#if HOST == 0
-    slip_reset();
-#endif
 }
 
 static uint8_t sp_stat(uint8_t *params, uint8_t *stat_list) {
@@ -183,38 +179,12 @@ static uint8_t sp_writeblk(uint8_t *params, const uint8_t *buffer) {
 }
 
 void sp_task(void) {
-#if HOST == 0
-    if (!hdd_sd_mounted()) {
-        slip_task();
-
-        switch (sp_control) {
-
-            case CONTROL_NONE:
-            case CONTROL_DONE:
-                return;
-
-            case CONTROL_PRODOS:
-            case CONTROL_SP:
-                slip_command(sp_control, (uint8_t*)sp_buffer);
-                break;
-
-            case CONTROL_CONFIG:
-                sp_buffer[0] = 1;  // Skip Config
-                break;
-        }
-
-        sp_read_offset = sp_write_offset = 0;
-        sp_control = CONTROL_DONE;
-        return;
-    }
-#endif
-
     if (sp_control == CONTROL_NONE || sp_control == CONTROL_DONE) {
         hdd_prefetch();
         return;
     }
 
-    if (!hdd_sd_mounted() && !hdd_usb_mounted()) {
+    if (!hdd_usb_mounted()) {
         return;
     }
 

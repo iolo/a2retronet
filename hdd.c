@@ -26,9 +26,9 @@ SOFTWARE.
 
 #include <string.h>
 #include <stdio.h>
-#include <rtc.h>
+#include <stdbool.h>
+#include <my_rtc.h>
 #include <f_util.h>
-#include <hw_config.h>
 
 #include "config.h"
 #include "sp.h"
@@ -41,7 +41,7 @@ SOFTWARE.
 #define IO_ERROR    0x27
 #define WRITE_PROT  0x2B
 
-static bool sd, usb;
+static bool usb;
 
 static struct {
     FIL      image;
@@ -113,16 +113,6 @@ static bool seek_block(int drive, uint16_t block) {
 
 void hdd_init(void) {
     time_init();
-
-    sd_card_t *sd_card = sd_get_by_num(0);
-
-    FRESULT fr = f_mount(&sd_card->fatfs, "SD:", 1);
-    if (fr != FR_OK) {
-        printf("f_mount(SD:) error: %s (%d)\n", FRESULT_str(fr), fr);
-        return;
-    }
-
-    sd = true;
 }
 
 void hdd_reset(void) {
@@ -144,7 +134,6 @@ void hdd_reset(void) {
 }
 
 void hdd_mount_usb(bool mount) {
-    // Make sure the upcoming new default drive is actually used
     hdd_reset();
     config_reset();
 
@@ -157,30 +146,15 @@ void hdd_mount_usb(bool mount) {
             return;
         }
 
-        fr = f_chdrive("USB:");
-        if (fr != FR_OK) {
-            printf("f_chdrive(USB:) error: %s (%d)\n", FRESULT_str(fr), fr);
-        }
-
         usb = true;
     } else {
-
-        FRESULT fr = f_chdrive("SD:");
-        if (fr != FR_OK) {
-            printf("f_chdrive(SD:) error: %s (%d)\n", FRESULT_str(fr), fr);
-        }    
-
-        fr = f_unmount("USB:");
+        FRESULT fr = f_unmount("USB:");
         if (fr != FR_OK) {
             printf("f_unmount(USB:) error: %s (%d)\n", FRESULT_str(fr), fr);
         }
 
         usb = false;
     }
-}
-
-bool hdd_sd_mounted(void) {
-    return sd;
 }
 
 bool hdd_usb_mounted(void) {

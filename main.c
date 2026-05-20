@@ -31,18 +31,12 @@ SOFTWARE.
 #include <tusb.h>
 
 #include "board.h"
-#include "ser.h"
 #include "sp.h"
 
 #include "main.h"
 
 void io_task(void) {
-#if HOST
-        tuh_task();
-#else
-        tud_task();
-        ser_task();
-#endif
+    tuh_task();
 }
 
 void main(void) {

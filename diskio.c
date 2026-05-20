@@ -10,12 +10,10 @@
 #include <pico/stdlib.h>
 #include <ff.h>         // Obtains integer types
 #include <diskio.h>     // Declarations of disk functions
-#include <glue.h>       // Declarations of SD card functions
 #include "usb_diskio.h" // Declarations of USB MSD functions
 
 // Definitions of physical drive number for each drive
-#define DEV_SD      0   // Map MMC/SD card to physical drive 0
-#define DEV_USB     1   // Map USB MSD to physical drive 1
+#define DEV_USB     0   // Map USB MSD to physical drive 0
 
 
 /*-----------------------------------------------------------------------*/
@@ -26,13 +24,8 @@ DSTATUS disk_status(
     BYTE pdrv   // Physical drive number to identify the drive
 ) {
     switch (pdrv) {
-        case DEV_SD:
-            return sd_disk_status(DEV_SD);
-
-#if HOST
         case DEV_USB:
             return usb_disk_status(DEV_USB);
-#endif
 
         default:
             return STA_NOINIT;
@@ -51,13 +44,8 @@ DSTATUS disk_initialize(
     gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
 
     switch (pdrv) {
-        case DEV_SD:
-            return sd_disk_initialize(DEV_SD);
-
-#if HOST
         case DEV_USB:
             return usb_disk_initialize(DEV_USB);
-#endif
 
         default:
             return STA_NOINIT;
@@ -79,15 +67,9 @@ DRESULT disk_read(
     gpio_put(PICO_DEFAULT_LED_PIN, true);
 
     switch (pdrv) {
-        case DEV_SD:
-            result = sd_disk_read(DEV_SD, buff, sector, count);
-            break;
-
-#if HOST
         case DEV_USB:
             result = usb_disk_read(DEV_USB, buff, sector, count);
             break;
-#endif
         
         default:
             result = RES_PARERR;
@@ -114,15 +96,9 @@ DRESULT disk_write(
     gpio_put(PICO_DEFAULT_LED_PIN, true);
 
     switch (pdrv) {
-        case DEV_SD:
-            result = sd_disk_write(DEV_SD, buff, sector, count);
-            break;
-
-#if HOST
         case DEV_USB:
             result = usb_disk_write(DEV_USB, buff, sector, count);
             break;
-#endif
 
         default:
             result = RES_PARERR;
@@ -145,13 +121,8 @@ DRESULT disk_ioctl(
     void *buff  // Buffer to send/receive control data
 ) {
     switch (pdrv) {
-        case DEV_SD:
-            return sd_disk_ioctl(DEV_SD, cmd, buff);
-
-#if HOST
         case DEV_USB:
             return usb_disk_ioctl(DEV_USB, cmd, buff);
-#endif
 
         default:
             return RES_PARERR;

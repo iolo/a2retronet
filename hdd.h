@@ -27,13 +27,13 @@ SOFTWARE.
 #ifndef _HDD_H
 #define _HDD_H
 
+#include <stdbool.h>
+
 void hdd_init(void);
 
 void hdd_reset(void);
 
 void hdd_mount_usb(bool);
-
-bool hdd_sd_mounted(void);
 
 bool hdd_usb_mounted(void);
 

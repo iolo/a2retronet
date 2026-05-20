@@ -8,9 +8,7 @@ pico_sdk_init()
 add_executable(${PROJECT_NAME})
 pico_add_extra_outputs(${PROJECT_NAME})
 
-option(HOST "USB Host Mode")
-message("HOST is ${HOST}")
-target_compile_definitions(${PROJECT_NAME} PRIVATE HOST=$<BOOL:${HOST}>)
+target_compile_definitions(${PROJECT_NAME} PRIVATE HOST=1)
 
 execute_process(
         COMMAND git describe --tags
@@ -25,7 +23,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE GIT_TAG="${GIT_TAG}")
 target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
 # http://elm-chan.org/fsw/ff/ requires ffconf.h to be
-# modified in order to set some configuration options 
+# modified in order to set some configuration options
 target_include_directories(${PROJECT_NAME} PRIVATE
         fatfs/source
         )
@@ -35,47 +33,40 @@ target_sources(${PROJECT_NAME} PRIVATE
         fatfs/source/ffunicode.c
         )
 
-# https://github.com/carlk3/no-OS-FatFS-SD-SPI-RPi-Pico requires
-# glue.c to be modified in order to allow multiple FatFs devices
+# https://github.com/carlk3/no-OS-FatFS-SD-SPI-RPi-Pico provides
+# utility code used by the USB-only storage stack
 target_include_directories(${PROJECT_NAME} PRIVATE
-        sd_spi/include
-        sd_spi/sd_driver
+#@@        sd_spi/sd_driver
+        new_sd_spi
         )
 target_sources(${PROJECT_NAME} PRIVATE
-        sd_spi/sd_driver/crc.c
-        sd_spi/sd_driver/hw_config.c
-        sd_spi/sd_driver/sd_card.c
-        sd_spi/sd_driver/sd_spi.c
-        sd_spi/sd_driver/spi.c
-        sd_spi/src/f_util.c
-        sd_spi/src/ff_stdio.c
-        sd_spi/src/glue.c
-        sd_spi/src/my_debug.c
-        sd_spi/src/rtc.c
-        )
-target_link_libraries(${PROJECT_NAME} PRIVATE
-        hardware_dma
-        hardware_rtc
-        hardware_spi
+#@@        sd_spi/sd_driver/crc.c
+        new_sd_spi/crc.c
+        new_sd_spi/f_util.c
+        new_sd_spi/my_rtc.c
         )
 
 include(FetchContent)
-FetchContent_Declare(a2pico
-        GIT_REPOSITORY https://github.com/oliverschmidt/a2pico.git
-        GIT_TAG main
-        )
-FetchContent_MakeAvailable(a2pico)
+set(A2PICO_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/_deps/a2pico-src" CACHE PATH
+        "Path to a local a2pico checkout")
+if (EXISTS "${A2PICO_SOURCE_DIR}/CMakeLists.txt")
+        add_subdirectory("${A2PICO_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/a2pico")
+else()
+        FetchContent_Declare(a2pico
+                GIT_REPOSITORY https://github.com/oliverschmidt/a2pico.git
+                GIT_TAG main
+                )
+        FetchContent_MakeAvailable(a2pico)
+endif()
 
 set_source_files_properties(incbin.S OBJECT_DEPENDS firmware.rom)
 add_custom_command(
         COMMAND cl65 -t apple2 -C apple2-asm.cfg
-                        ${CMAKE_CURRENT_SOURCE_DIR}/6502/SSC.S
+                        ${CMAKE_CURRENT_SOURCE_DIR}/6502/SMARTPORT.ROM.S
                      -o ${CMAKE_CURRENT_BINARY_DIR}/firmware.rom
-        MAIN_DEPENDENCY 6502/SSC.S
+        MAIN_DEPENDENCY 6502/SMARTPORT.ROM.S
         OUTPUT firmware.rom
-        DEPENDS 6502/SSC.CN00.S 6502/SSC.C800.S 6502/SSC.HILEV.S 6502/SSC.TERM.S
-                6502/SSC.CORE.S 6502/SSC.UTIL.S 6502/SSC.CMD.S   6502/SSC.CF00.S
-                6502/SMARTPORT.S
+        DEPENDS 6502/SMARTPORT.ROM.S 6502/SMARTPORT.S
         VERBATIM
         )
 
@@ -87,88 +78,18 @@ target_sources(${PROJECT_NAME} PRIVATE
         hdd.c
         incbin.S
         main.c
+        msc_host.c
         sp.c
+        usb_diskio.c
         )
-if(HOST)
-        target_sources(${PROJECT_NAME} PRIVATE
-                msc_host.c
-                usb_diskio.c
-                )
-else()
-        target_sources(${PROJECT_NAME} PRIVATE
-                msc_device.c
-                ser.c
-                slip.c
-                usb_descriptors.c
-                )
-endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE
         a2pico
+        pico_aon_timer
         pico_multicore
         pico_stdlib
         pico_unique_id
         )
-if(HOST)
-        target_link_libraries(${PROJECT_NAME} PRIVATE
-                tinyusb_host
-                )
-else()
-        target_link_libraries(${PROJECT_NAME} PRIVATE
-                tinyusb_device
-                )
-endif()
-
-if(NOT HOST)
-
-add_custom_command(
-        COMMAND cl65 -t apple2 apple2.lib -C apple2-asm.cfg -u __EXEHDR__
-                     -Wl -D,__FILETYPE__=$E2 --start-addr $2000 -Wa -D,init
-                        ${CMAKE_CURRENT_SOURCE_DIR}/6502/ssc_show_hide.S
-                     -o ${CMAKE_CURRENT_BINARY_DIR}/ATINIT.as
-        MAIN_DEPENDENCY 6502/ssc_show_hide.S
-        OUTPUT ATINIT.as
-        VERBATIM
+target_link_libraries(${PROJECT_NAME} PRIVATE
+        tinyusb_host
         )
-
-add_custom_command(
-        COMMAND cl65 -t apple2 apple2.lib -C apple2-asm.cfg -u __EXEHDR__
-                     -Wl -D,__FILETYPE__=$FF --start-addr $2000 -Wa -D,show
-                        ${CMAKE_CURRENT_SOURCE_DIR}/6502/ssc_show_hide.S
-                     -o ${CMAKE_CURRENT_BINARY_DIR}/SSC.SHOW.SYSTEM.as
-        MAIN_DEPENDENCY 6502/ssc_show_hide.S
-        OUTPUT SSC.SHOW.SYSTEM.as
-        VERBATIM
-        )
-
-add_custom_command(
-        COMMAND cl65 -t apple2 apple2.lib -C apple2-asm.cfg -u __EXEHDR__
-                     -Wl -D,__FILETYPE__=$FF --start-addr $2000 -Wa -D,hide
-                        ${CMAKE_CURRENT_SOURCE_DIR}/6502/ssc_show_hide.S
-                     -o ${CMAKE_CURRENT_BINARY_DIR}/SSC.HIDE.SYSTEM.as
-        MAIN_DEPENDENCY 6502/ssc_show_hide.S
-        OUTPUT SSC.HIDE.SYSTEM.as
-        VERBATIM
-        )
-
-add_custom_target(ssc_show_hide ALL DEPENDS
-        ATINIT.as
-        SSC.SHOW.SYSTEM.as
-        SSC.HIDE.SYSTEM.as
-        )
-
-add_custom_target(disk
-        COMMAND java -jar ac.jar -as ${CMAKE_CURRENT_BINARY_DIR}/ProDOS_2_4_3.po
-                                 ATINIT
-                                 < ${CMAKE_CURRENT_BINARY_DIR}/ATINIT.as
-        COMMAND java -jar ac.jar -as ${CMAKE_CURRENT_BINARY_DIR}/ProDOS_2_4_3.po
-                                 SSC.SHOW.SYSTEM
-                                 < ${CMAKE_CURRENT_BINARY_DIR}/SSC.SHOW.SYSTEM.as
-        COMMAND java -jar ac.jar -as ${CMAKE_CURRENT_BINARY_DIR}/ProDOS_2_4_3.po
-                                 SSC.HIDE.SYSTEM
-                                 < ${CMAKE_CURRENT_BINARY_DIR}/SSC.HIDE.SYSTEM.as
-        DEPENDS ssc_show_hide
-        VERBATIM
-        )
-
-endif()  # NOT HOST

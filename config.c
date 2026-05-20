@@ -92,14 +92,15 @@ static void get_config(void) {
         return;
     }
     bootdelay = DEFAULT_BOOTDELAY;
-    drives_number = MAX_DRIVES;
+    drives_number = 0;
 
     FIL text;
-    FRESULT fr = f_open(&text, "A2retroNET.txt", FA_OPEN_EXISTING | FA_READ);
+    FRESULT fr = f_open(&text, "USB:/A2retroNET.txt", FA_OPEN_EXISTING | FA_READ);
     if (fr != FR_OK) {
-        printf("f_open(A2retroNET.txt, read) error: %s (%d)\n", FRESULT_str(fr), fr);
+        printf("f_open(USB:/A2retroNET.txt, read) error: %s (%d)\n", FRESULT_str(fr), fr);
         return;
     }
+    drives_number = MAX_DRIVES;
 
     int section = SECTION_NONE;
     while (true) {
@@ -147,13 +148,13 @@ static void get_config(void) {
                     continue;
                 }
                 int drive = line[0] - '1';
-                strcpy(drives[drive].path, &line[2]);
+                snprintf(drives[drive].path, sizeof(drives[drive].path), "%s", &line[2]);
                 break;
         }
     }
     fr = f_close(&text);
     if (fr != FR_OK) {
-        printf("f_close(A2retroNET.txt) error: %s (%d)\n", FRESULT_str(fr), fr);
+        printf("f_close(USB:/A2retroNET.txt) error: %s (%d)\n", FRESULT_str(fr), fr);
     }
 
     printf("[settings]\n");
@@ -169,16 +170,16 @@ static void put_config(void) {
     hdd_reset();
 
     FIL text;
-    FRESULT fr = f_open(&text, "A2retroNET.txt", FA_CREATE_ALWAYS | FA_WRITE);
+    FRESULT fr = f_open(&text, "USB:/A2retroNET.txt", FA_CREATE_ALWAYS | FA_WRITE);
     if (fr != FR_OK) {
-        printf("f_open(A2retroNET.txt, write) error: %s (%d)\n", FRESULT_str(fr), fr);
+        printf("f_open(USB:/A2retroNET.txt, write) error: %s (%d)\n", FRESULT_str(fr), fr);
         return;
     }
 
     if(f_printf(&text, "[settings]\nbootdelay=%d\n[drives]\nnumber=%d\n",
             bootdelay, drives_number) < 0) {
         if (f_error(&text)) {
-            printf("f_printf(A2retroNET.txt) error\n");
+            printf("f_printf(USB:/A2retroNET.txt) error\n");
         }
         f_close(&text);
         return;
@@ -187,7 +188,7 @@ static void put_config(void) {
     for (int drive = 0; drive < drives_number; drive++) {
         if(f_printf(&text, "%d=%s\n", drive + 1, drives[drive].path) < 0) {
             if (f_error(&text)) {
-                printf("f_printf(A2retroNET.txt) error\n");
+                printf("f_printf(USB:/A2retroNET.txt) error\n");
             }
             f_close(&text);
             return;
@@ -196,7 +197,7 @@ static void put_config(void) {
 
     fr = f_close(&text);
     if (fr != FR_OK) {
-        printf("f_close(A2retroNET.txt, write) error: %s (%d)\n", FRESULT_str(fr), fr);
+        printf("f_close(USB:/A2retroNET.txt, write) error: %s (%d)\n", FRESULT_str(fr), fr);
     }
 }
 
@@ -254,7 +255,7 @@ static void ack(uint8_t retval) {
 
 static void set_boot(uint8_t boot) {
     uint8_t device = boot - 0x80 - '0';
-    if (device > drives_number) {
+    if (device == 0 || device > drives_number) {
         ack(BOOT_FAIL);
         return;
     }
@@ -294,7 +295,7 @@ static bool settings(bool *put) {
     while (true) {
         clrscr();
         printfxy(8, 0, false, "A2retroNET Settings (%s)",
-            hdd_usb_mounted() ? "USB" : "SD");
+            "USB");
         hline(1);
 
         printfxy( 8, 4, false,        "Boot Delay:   Seconds");
@@ -444,7 +445,7 @@ void config(void) {
     lowercase = sp_buffer[CONFIG_I_KEY] == CONFIG_LOWERCASE;
 
     char dir[MAX_PATH];
-    strcpy(dir, hdd_usb_mounted() ? "USB:/" : "SD:/");
+    snprintf(dir, sizeof(dir), "USB:/");
     get_directory(dir);
 
     int state = 0;
@@ -455,8 +456,7 @@ void config(void) {
 
     while (true) {
         clrscr();
-        printfxy(2, 0, false, "A2retroNET Drive Configuration (%s)",
-            hdd_usb_mounted() ? "USB" : "SD");
+        printfxy(4, 0, false, "A2retroNET Drive Configuration");
         hline(1);
 
         for (int d = 0; d < drives_number; d++) {
@@ -560,34 +560,32 @@ void config(void) {
                 }
                 break;
             case '/':
-                dir[dir[0] == 'S' ? 4 : 5] = '\0';
+                dir[5] = '\0';
                 get_directory(dir);
                 start = 0;
                 entry = 0;
                 break;
             case ':':
-                if (dir[0] == 'S' && hdd_usb_mounted()) {
-                    strcpy(dir, "USB:/");
-                    get_directory(dir);
-                    start = 0;
-                    entry = 0;
-                } else if (dir[0] == 'U' && hdd_sd_mounted()) {
-                    strcpy(dir, "SD:/");
-                    get_directory(dir);
-                    start = 0;
-                    entry = 0;
-                }
                 break;
             case 13:    // Return
                 if (directory[start + entry].fattrib & AM_DIR) {
-                    strcat(dir, directory[start + entry].fname);
-                    strcat(dir, "/");
+                    size_t dir_len = strlen(dir);
+                    size_t name_len = strlen(directory[start + entry].fname);
+                    if (dir_len + name_len + 2 >= sizeof(dir)) {
+                        break;
+                    }
+                    memcpy(&dir[dir_len], directory[start + entry].fname, name_len);
+                    dir[dir_len + name_len] = '/';
+                    dir[dir_len + name_len + 1] = '\0';
                     get_directory(dir);
                     start = 0;
                     entry = 0;
                 } else {
-                    strcpy(drives[drive].path, dir);
-                    strcat(drives[drive].path, directory[start + entry].fname);
+                    int written = snprintf(drives[drive].path, sizeof(drives[drive].path),
+                                           "%s%s", dir, directory[start + entry].fname);
+                    if (written < 0 || written >= (int)sizeof(drives[drive].path)) {
+                        break;
+                    }
                     put = true;
                 }
                 break;
